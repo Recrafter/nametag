@@ -1,44 +1,49 @@
+## Annotations
 
-## 🧩 `@Widener`
+### `@KAccessor`
 
-The @Widener annotation marks classes or interfaces whose target classes should be made accessible across mod loaders.
+Marks a Kotlin interface as an accessor definition and specifies the target class.  
+The processor generates a corresponding Java mixin interface and Kotlin extensions for the given targets.
 
----
+The `widener` parameter is optional.  
+If the target class is not accessible (for example, it is private),  
+first specify only the `widener` and run **Gradle sync**.  
+Crafter will generate the necessary **AW/AT** configuration to widen the class,  
+after which the class can be referenced normally in the `target` parameter.
 
-## 💡 Usage
+```kotlin
+@KAccessor(
+    widener = "net.minecraft.client.MinecraftClient",
+    target = MinecraftClient::class
+)
+interface MinecraftClientAccessor {
 
-The Crafter Gradle plugin scans `@Widener` annotations during sync or build and generates access configuration files.
+    @Open("window")
+    val window: Window
 
-To create an accessor:
-
-1. Annotate the future accessor class with @Widener, specifying the target class.
-2. Run a Gradle sync to generate the AW/AT.
-3. Reference the target class in the @Mixin annotation on the accessor class.
-
-Example:
-
-```java
-import io.github.diskria.crafter.annotations.Widener;
-import org.spongepowered.asm.mixin.Mixin;
-import net.minecraft.world.item.ItemStack;
-
-@Widener("net.minecraft.world.item.ItemStack")
-@Mixin(ItemStack.class)
-public interface ItemStackAccessor {
-    // Accessor methods here
+    @Open("setScreen")
+    fun setScreen(screen: Screen)
 }
 ```
 
----
+### `@Open`
 
-## 📄 Generated Output
+Declares a property or function inside a `@KAccessor` interface that should be opened in the target class.
 
-For Fabric / Quilt (Access Widener format)
-```
-accessible class net/minecraft/world/item/ItemStack
+When used on a property, it generates a Mixin `@Accessor` for the specified field.  
+When used on a function, it generates a Mixin `@Invoker` for the specified method.
+
+If the `target` parameter is omitted, the processor infers the target name from the member name  
+(similar to the standard Mixin behavior, where `getFoo` maps to the field `foo`).
+
+```kotlin
+@Open
+val currentScreen: Screen
 ```
 
-For Forge / NeoForge (Access Transformer format)
-```
-public-f net/minecraft/world/item/ItemStack
-```
+## Usage workflow
+
+1. Declare a Kotlin interface annotated with `@KAccessor`.
+2. Specify the `target` class and, if needed, the `widener`.
+3. Annotate members with `@Open` to expose fields or methods.
+4. Run the Gradle build. Crafter KSP will generate Java Mixin interfaces and Kotlin extensions automatically.
