@@ -4,6 +4,8 @@ import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.ParameterizedTypeName
 import com.squareup.kotlinpoet.TypeName
 import com.squareup.kotlinpoet.TypeVariableName
+import com.squareup.kotlinpoet.UNIT
+import io.github.recrafter.nametag.accessors.processor.KotlinType
 
 // Adapted from https://gist.github.com/ShaishavGandhi/097033cc528ae25741186973e4d36ce4
 // Originally created by Shaishav Gandhi (Uber) for KotlinPoet ↔ JavaPoet interop.
@@ -18,4 +20,7 @@ fun TypeName.toJavaType(shouldBox: Boolean = false): com.palantir.javapoet.TypeN
     }
 
 val TypeName.isUnit: Boolean
-    get() = toString() == "kotlin.Unit"
+    get() = this is ClassName && this == UNIT
+
+fun TypeName?.orUnit(): TypeName =
+    this ?: UNIT

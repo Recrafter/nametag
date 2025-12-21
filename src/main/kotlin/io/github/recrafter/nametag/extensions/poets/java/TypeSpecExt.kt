@@ -8,5 +8,5 @@ inline fun <reified A : Annotation> TypeSpec.Builder.addAnnotation(builder: Anno
     addAnnotation(buildJavaAnnotation<A>(builder))
 }
 
-fun TypeSpec.buildJavaFile(packageName: String): JavaFile =
+fun TypeSpec.toJavaFile(packageName: String): JavaFile =
     JavaFile.builder(packageName, this).indent("    ").build()
