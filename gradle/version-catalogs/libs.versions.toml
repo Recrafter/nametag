@@ -5,6 +5,7 @@ kotlin = "2.0.21"
 ksp = "2.0.21-1.0.25"
 
 mixin = "0.8.7"
+mixin-extras = "0.5.2"
 
 java-poet = "0.9.0"
 kotlin-poet-ksp = "2.2.0"
@@ -19,8 +20,10 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 
 [libraries]
 ksp-api = { group = "com.google.devtools.ksp", name = "symbol-processing-api", version.ref = "ksp" }
+psi-api = { group = "org.jetbrains.kotlin", name = "kotlin-compiler-embeddable", version.ref = "kotlin" }
 
 mixin = { group = "org.spongepowered", name = "mixin", version.ref = "mixin" }
+mixin-extras = { group = "io.github.llamalad7", name = "mixinextras-common", version.ref = "mixin-extras" }
 
 java-poet = { group = "com.palantir.javapoet", name = "javapoet", version.ref = "java-poet" }
 kotlin-poet-ksp = { group = "com.squareup", name = "kotlinpoet-ksp", version.ref = "kotlin-poet-ksp" }

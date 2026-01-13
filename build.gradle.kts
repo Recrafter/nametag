@@ -9,8 +9,10 @@ plugins {
 
 dependencies {
     implementation(libs.ksp.api)
+    implementation(libs.psi.api)
 
     implementation(libs.mixin)
+    implementation(libs.mixin.extras)
 
     implementation(libs.java.poet)
     implementation(libs.kotlin.poet.ksp)
