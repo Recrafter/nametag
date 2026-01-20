@@ -3,6 +3,7 @@ package io.github.recrafter.lapis
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.KSPLogger
 import com.google.devtools.ksp.processing.Resolver
+import com.google.devtools.ksp.symbol.KSValueParameter
 import com.llamalad7.mixinextras.expression.Definition
 import com.llamalad7.mixinextras.expression.Definitions
 import com.llamalad7.mixinextras.expression.Expression
@@ -12,19 +13,18 @@ import com.llamalad7.mixinextras.injector.ModifyReceiver
 import com.llamalad7.mixinextras.injector.ModifyReturnValue
 import com.llamalad7.mixinextras.injector.v2.WrapWithCondition
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation
 import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.asClassName
 import io.github.recrafter.lapis.annotations.accessors.AccessConstructor
 import io.github.recrafter.lapis.annotations.accessors.AccessField
 import io.github.recrafter.lapis.annotations.accessors.AccessMethod
 import io.github.recrafter.lapis.annotations.accessors.Accessor
-import io.github.recrafter.lapis.annotations.aliases.Alias
-import io.github.recrafter.lapis.annotations.aliases.FieldAlias
-import io.github.recrafter.lapis.annotations.aliases.MethodAlias
 import io.github.recrafter.lapis.annotations.patches.Patch
-import io.github.recrafter.lapis.annotations.patches.hooks.Function
 import io.github.recrafter.lapis.annotations.patches.hooks.Hook
 import io.github.recrafter.lapis.annotations.patches.hooks.Kind
+import io.github.recrafter.lapis.annotations.patches.hooks.Method
 import io.github.recrafter.lapis.annotations.patches.hooks.Original
 import io.github.recrafter.lapis.api.patches.LapisPatch
 import io.github.recrafter.lapis.extensions.addIfNotNull
@@ -34,8 +34,11 @@ import io.github.recrafter.lapis.extensions.jp.*
 import io.github.recrafter.lapis.extensions.kp.*
 import io.github.recrafter.lapis.extensions.ksp.*
 import io.github.recrafter.lapis.extensions.prefixed
+import io.github.recrafter.lapis.extensions.psi.PsiCallable
+import io.github.recrafter.lapis.extensions.psi.findPsiFunction
 import io.github.recrafter.lapis.kj.KJClassName
 import io.github.recrafter.lapis.kj.KJTypeName
+import io.github.recrafter.lapis.utils.Descriptors
 import io.github.recrafter.lapis.utils.NonDeferringProcessor
 import io.github.recrafter.lapis.utils.PsiHelper
 import org.spongepowered.asm.mixin.*
@@ -52,11 +55,8 @@ internal class LapisProcessor(
     private val logger: KSPLogger,
 ) : NonDeferringProcessor() {
 
-    private val modId: String = arguments["modId"]
-        ?: error("Argument 'lapis.modId' was not provided.")
-
-    private val packageName: String = arguments["packageName"]
-        ?: error("Argument 'lapis.packageName' was not provided.")
+    private val modId: String by arguments
+    private val packageName: String by arguments
 
     private val accessors: MutableMap<KJClassName, GeneratedAccessor> = mutableMapOf()
     private val patches: MutableMap<KJClassName, GeneratedPatch> = mutableMapOf()
@@ -68,7 +68,6 @@ internal class LapisProcessor(
 
     override fun run(resolver: Resolver) {
         resolveAccessors(resolver)
-        resolveAliases(resolver)
         resolvePatches(resolver)
     }
 
@@ -105,7 +104,7 @@ internal class LapisProcessor(
                     addClassArrayMember(DEFAULT_ANNOTATION_ELEMENT_NAME, patch.targetTypeName)
                 }
                 addAnnotation<SuppressWarnings> {
-                    addStringMember(DEFAULT_ANNOTATION_ELEMENT_NAME, "NullableProblems")
+                    addStringMember(DEFAULT_ANNOTATION_ELEMENT_NAME, "DataFlowIssue")
                 }
                 addSuperinterface(patch.bridgeClassName.javaVersion)
                 val implFieldName = "patch"
@@ -376,7 +375,7 @@ internal class LapisProcessor(
                                         "must not have a return type."
                                 }
                                 val invokerMethod = buildInvokerMethod(
-                                    "<init>",
+                                    Descriptors.CONSTRUCTOR_METHOD_NAME,
                                     true,
                                     targetClassName.typeName,
                                     nameByUser,
@@ -443,99 +442,6 @@ internal class LapisProcessor(
         }
     }
 
-    private fun resolveAliases(resolver: Resolver) {
-        resolver.forEachSymbolsAnnotatedWith<Alias> { symbol, alias, annotation ->
-            logger.kspRequire(symbol is KspClass && symbol.isInterface, symbol) {
-                "Annotation ${Alias::class.atName} can only be applied to interfaces."
-            }
-            logger.kspRequire(symbol.parentDeclaration == null, symbol) {
-                "Interface annotated with ${Alias::class.atName} must be root."
-            }
-            val targetClassName = annotation.getClassDeclarationArgument(Alias::target.name).asKJClassName()
-            val extensionProperties = mutableListOf<KPProperty>()
-            val extensionFunctions = mutableListOf<KPFunction>()
-            symbol.declarations.forEach { declaration ->
-                when {
-                    declaration is KspProperty -> {
-                        val property = declaration
-                        restrictMixinAnnotations(property)
-                        val fieldAliasAnnotation = property.getSingleAnnotationOrNull<FieldAlias>()
-                        logger.kspRequire(fieldAliasAnnotation != null, property) {
-                            "Properties inside ${Alias::class.atName} interfaces " +
-                                "must be annotated with ${FieldAlias::class.atName}."
-                        }
-                        logger.kspRequire(property.getter?.isAbstract == true, property) {
-                            "Properties inside ${Alias::class.atName} interfaces must not declare a getter."
-                        }
-                        val propertyTypeName = property.type.asKJTypeName()
-                        val nameByUser = property.name
-                        val vanillaName = fieldAliasAnnotation.vanillaName
-                        extensionProperties += buildKotlinProperty(nameByUser, propertyTypeName) {
-                            setReceiverType(targetClassName)
-                            getter(buildKotlinGetter {
-                                addModifiers(KModifier.INLINE)
-                                addGetterStatement(nameByUser)
-                            })
-                            if (property.isMutable) {
-                                mutable(true)
-                                setter(buildKotlinSetter {
-                                    addModifiers(KModifier.INLINE)
-                                    setParameters(SETTER_ARGUMENT_NAME to propertyTypeName)
-                                    addSetterStatement(vanillaName, SETTER_ARGUMENT_NAME)
-                                })
-                            }
-                        }
-                    }
-
-                    declaration is KspFunction -> {
-                        val function = declaration
-                        restrictMixinAnnotations(function)
-                        val methodAliasAnnotation = function.getSingleAnnotationOrNull<MethodAlias>()
-                        logger.kspRequire(methodAliasAnnotation != null, function) {
-                            "Functions inside ${Alias::class.atName} interfaces " +
-                                "must be annotated with ${MethodAlias::class.atName}."
-                        }
-                        logger.kspRequire(function.isAbstract, function) {
-                            "Functions inside ${Alias::class.atName} interfaces must not have a body."
-                        }
-                        val parameterList = function.parameters.asKJParameterList()
-                        val returnType = function.getReturnTypeOrNull()
-                        val hasReturnType = returnType != null
-                        val nameByUser = function.name
-                        val vanillaName = methodAliasAnnotation.vanillaName
-                        extensionFunctions += buildKotlinFunction(nameByUser) {
-                            addModifiers(KModifier.INLINE)
-                            setReceiverType(targetClassName)
-                            setParameters(parameterList.kotlinVersion)
-                            setReturnType(returnType)
-                            addInvokeFunctionStatement(hasReturnType, null, vanillaName, parameterList.names)
-                        }
-                    }
-
-                    declaration is KspClass && declaration.isInterface -> {
-                        val nestedInterface = declaration
-                        logger.kspRequire(nestedInterface.hasAnnotation<Alias>(), nestedInterface) {
-                            "Nested interface '${nestedInterface.name}' must be annotated with ${Alias::class.atName}."
-                        }
-                    }
-
-                    else -> logger.kspError(declaration) {
-                        "Only properties, functions, and nested interfaces " +
-                            "are allowed inside ${Alias::class.atName} interfaces."
-                    }
-                }
-            }
-            accumulateExtension(targetClassName) {
-                symbols += symbol
-                nullIfNot(alias.typeAlias.isNotEmpty()) {
-                    typeAliases.add(buildKotlinTypeAlias(alias.typeAlias, targetClassName))
-                }
-                properties += extensionProperties
-                functions += extensionFunctions
-            }
-        }
-    }
-
     private fun resolvePatches(resolver: Resolver) {
         resolver.forEachSymbolsAnnotatedWith<Patch> { symbol, _, annotation ->
             logger.kspRequire(symbol is KspClass && symbol.isClass, symbol) {
@@ -575,8 +481,8 @@ internal class LapisProcessor(
                 val nameByUser = property.name
                 val getterName = nameByUser.prefixed("get")
                 val setterName = nameByUser.prefixed("set")
-                val bridgeGetterName = modId + "_" + getterName
-                val bridgeSetterName = modId + "_" + setterName
+                val bridgeGetterName = getterName.withModId()
+                val bridgeSetterName = setterName.withModId()
                 val propertyTypeName = property.type.asKJTypeName()
                 bridgeFunctions += buildKotlinFunction(bridgeGetterName) {
                     addModifiers(KModifier.ABSTRACT)
@@ -628,10 +534,10 @@ internal class LapisProcessor(
                     logger.kspRequire(function.isPublic, function) {
                         "Functions annotated with ${Hook::class.atName} must be public."
                     }
-                    mixinMethods += resolveHook(function, hookAnnotation)
+                    mixinMethods += resolveHook(function, hookAnnotation, lazyPatchGetterCall)
                 } else if (function.isPublic) {
                     val nameByUser = function.name
-                    val bridgeName = modId + "_" + nameByUser
+                    val bridgeName = nameByUser.withModId()
                     val parameterList = function.parameters.asKJParameterList()
                     val returnType = function.getReturnTypeOrNull()
                     val hasReturnType = returnType != null
@@ -689,95 +595,115 @@ internal class LapisProcessor(
         }
     }
 
-    private fun resolveHook(function: KspFunction, hookAnnotation: Hook): JPMethod {
+    private fun resolveHook(function: KspFunction, hookAnnotation: Hook, lazyPatchGetterCall: JPCodeBlock): JPMethod {
+        val mixinMethodParameters = mutableListOf<JPParameter>()
+        val callArguments = arrayOfNulls<JPCodeBlock>(function.parameters.size)
         val kind = hookAnnotation.kind
-        val functionParameter = function.parameters.singleOrNull { it.hasAnnotation<Function>() }
-        logger.kspRequire(functionParameter != null, function) {
+        val methodParameter = function.parameters.singleOrNull { it.hasAnnotation<Method>() }
+        logger.kspRequire(methodParameter != null, function) {
             "Functions annotated with ${Hook::class.atName} " +
-                "must have exactly one parameter annotated with ${Function::class.atName}."
+                "must have exactly one parameter annotated with ${Method::class.atName}."
         }
-        val functionType = functionParameter.type.resolve()
-        logger.kspRequire(functionType.isFunctionType, functionParameter) {
-            "Hook parameters annotated with ${Function::class.atName} must be a non-suspend function type."
+        val methodLambdaType = methodParameter.type.resolve()
+        logger.kspRequire(methodLambdaType.isFunctionType, methodParameter) {
+            "Hook parameters annotated with ${Method::class.atName} must be a non-suspend function type."
         }
-        logger.kspRequire(functionType.isMarkedNullable, functionParameter) {
-            "Hook parameters annotated with ${Function::class.atName} must be nullable."
-        }
+        val methodLambdaGenericTypes = methodLambdaType.genericTypes().map { it.asKJTypeName() }
+        val methodLambdaReturnType = methodLambdaGenericTypes.last()
         if (kind == Kind.Method) {
-            logger.kspRequire(function.parameters.none { it.hasAnnotation<Original>() }, functionParameter) {
+            logger.kspRequire(function.parameters.none { it.hasAnnotation<Original>() }, methodParameter) {
                 "Hooks with ${kind.name} kind must not have parameters annotated with ${Original::class.atName}."
             }
+            mixinMethodParameters.addLast(
+                buildJavaParameter(
+                    Operation::class.asClassName().asKJClassName()
+                        .parameterizedBy(methodLambdaReturnType.boxed)
+                        .javaVersion,
+                    "_original"
+                )
+            )
+            callArguments[function.parameters.indexOf(methodParameter)] = JPCodeBlock.of("null")
         } else {
             val originalParameter = function.parameters.singleOrNull { it.hasAnnotation<Original>() }
             logger.kspRequire(originalParameter != null, function) {
                 "Hooks with ${kind.name} kind must have exactly one parameter annotated with ${Original::class.atName}."
             }
+            val originalType = originalParameter.type.resolve()
             if (kind == Kind.Operation) {
-                val originalType = originalParameter.type.resolve()
                 logger.kspRequire(originalType.isFunctionType, originalParameter) {
                     "Parameters annotated with ${Original::class.atName} in hooks with ${kind.name} kind " +
                         "must be a non-suspend function type."
                 }
-                logger.kspRequire(!originalType.isMarkedNullable, originalParameter) {
-                    "Parameters annotated with ${Original::class.atName} in hooks with ${kind.name} kind " +
-                        "must be non-null."
-                }
+            }
+            callArguments[function.parameters.indexOf(methodParameter)] = JPCodeBlock.of("null")
+        }
+        val signatureParameters = mutableListOf<KSValueParameter>()
+        callArguments.forEachIndexed { index, argument ->
+            if (argument == null) {
+                val parameter = function.parameters[index]
+                callArguments[index] = JPCodeBlock.of(parameter.requireName())
+                signatureParameters += parameter
             }
         }
+        if (kind == Kind.Method) {
+            val lambdaParameterNames = signatureParameters.joinToString { "_" + it.requireName() }
+            callArguments[function.parameters.indexOf(methodParameter)] = JPCodeBlock.of(
+                buildString {
+                    append("(_instance, \$L) -> ")
+                    if (methodLambdaReturnType.kotlinVersion == KPUnit) {
+                        append("{\n")
+                    }
+                    append("_original.call(\$L)")
+                    if (methodLambdaReturnType.kotlinVersion == KPUnit) {
+                        append(";\nreturn null;\n}")
+                    }
+                },
+                lambdaParameterNames,
+                lambdaParameterNames,
+            )
+        }
+        mixinMethodParameters.addAll(0, signatureParameters.map { signatureParameter ->
+            buildJavaParameter(signatureParameter.type.asKJTypeName(), signatureParameter.requireName())
+        })
+        val psiMethodLambdaParameter = PsiHelper.loadPsiFile(function)
+            .findPsiFunction { it.name == function.name }
+            ?.valueParameters
+            ?.firstOrNull { it.name == methodParameter.requireName() }
+        logger.kspRequire(psiMethodLambdaParameter != null, function) {
+            "Unable to resolve parameter from KSP in PSI system."
+        }
+        val psiCallable = psiMethodLambdaParameter.defaultValue
+        logger.kspRequire(psiCallable is PsiCallable, function) {
+            "Parameter ${methodParameter.requireName()} must have callable reference in default value."
+        }
+        val annotation = when {
+            kind == Kind.Method -> {
+                buildJavaAnnotation<WrapMethod> {
+                    addStringMember(
+                        "method",
+                        Descriptors.forMethod(
+                            psiCallable.callableReference.text,
+                            null,
+                            methodLambdaGenericTypes.drop(1).dropLast(1),
+                            methodLambdaReturnType
+                        )
+                    )
+                }
+            }
 
-
-        return buildJavaMethod(function.name)
-//
-//        val lambdaGenericTypes = genericLambdaType.genericTypes().map { it.asKJTypeName() }
-//        logger.warn("Lambda generic types: ${lambdaGenericTypes.joinToString()}")
-//
-//        val psiTargetClass = PsiHelper.loadPsiFile(targetClass).findPsiClass {
-//            it.name == targetClass.name
-//        }
-//        logger.kspRequire(psiTargetClass != null, targetClass) {
-//            "Unable to resolve ${targetClass.name} class in PSI."
-//        }
-//        val psiSuperType = psiTargetClass.superTypeListEntries.singleOrNull()
-//        logger.kspRequire(psiSuperType is PsiSuperTypeCallEntry, targetClass) {
-//            "${Hook::class.simpleName} must have a constructor call."
-//        }
-//
-//        val psiArgumentExpression = psiSuperType.valueArguments.singleOrNull()?.getArgumentExpression()
-//        logger.kspRequire(psiArgumentExpression is PsiCallable, targetClass) {
-//            "${Hook::class.simpleName} constructor argument must be a callable reference."
-//        }
-//
-//        val callableReceiverName = psiArgumentExpression.receiverExpression?.text
-//        val callableReferenceName = psiArgumentExpression.callableReference.text
-//        val callableClassName = callableReceiverName ?: callableReferenceName
-//        logger.kspRequire(callableClassName == genericReceiverClassName.name, targetClass) {
-//            "Expected receiver class ${genericReceiverClassName.name}, " +
-//                "but found $callableClassName in callable reference."
-//        }
-//        if (isConstructorTarget) {
-//            logger.kspRequire(callableReceiverName == null, targetClass) {
-//                "Callable reference in target annotated with ${ConstructorTarget::class.atName} " +
-//                    "must not have receiver."
-//            }
-//            val lambdaReturnClassName = lambdaGenericTypes.last().className
-//            logger.kspRequire(lambdaReturnClassName == genericReceiverClassName, targetClass) {
-//                "Lambda return type must be same as generic receiver type."
-//            }
-//            val descriptor = MixinUtils.getConstructorDescriptor(lambdaGenericTypes.dropLast(1))
-//        } else {
-//            logger.kspRequire(callableReceiverName != null, targetClass) {
-//                "Callable reference in target annotated with ${MethodTarget::class.atName} " +
-//                    "must have receiver."
-//            }
-//            if (methodTargetAnnotation?.isStatic == false) {
-//                val lambdaReceiverClassName = lambdaGenericTypes.first().className
-//                logger.kspRequire(lambdaReceiverClassName == genericReceiverClassName, targetClass) {
-//                    "Lambda receiver type must be same as generic receiver type."
-//                }
-//            } else {
-//
-//            }
-//        }
+            else -> TODO()
+        }
+        return buildJavaMethod(function.name.withModId()) {
+            addAnnotation(annotation)
+            addModifiers(Modifier.PRIVATE)
+            addParameters(mixinMethodParameters)
+            addStatement(
+                "\$L.\$L(\$L)",
+                lazyPatchGetterCall,
+                function.name,
+                callArguments.joinToString { it.toString() },
+            )
+        }
     }
 
     private fun buildAccessorMethod(
@@ -801,7 +727,7 @@ internal class LapisProcessor(
             if (isStatic && !isSetter) {
                 addStubStatement()
             }
-            setReturnType(type.takeIf { !isSetter })
+            setReturnType(type.takeUnless { isSetter })
         }
 
     private fun buildInvokerMethod(
@@ -887,6 +813,9 @@ internal class LapisProcessor(
         PsiHelper.destroy()
     }
 
+    private fun String.withModId(): String =
+        "${modId}_$this"
+
     private enum class AccessorMethodType(val prefix: String) {
 
         GETTER("get"),
@@ -941,7 +870,6 @@ internal class LapisProcessor(
         private const val DEFAULT_ANNOTATION_ELEMENT_NAME: String = "value"
         private const val SETTER_ARGUMENT_NAME: String = "newValue"
 
-        @Suppress("DEPRECATION")
         private val mixinAnnotations: List<KClass<out Annotation>> = listOf(
             Overwrite::class,
             Debug::class,
@@ -969,7 +897,7 @@ internal class LapisProcessor(
             ModifyExpressionValue::class,
             ModifyReceiver::class,
             ModifyReturnValue::class,
-            com.llamalad7.mixinextras.injector.WrapWithCondition::class,
+            @Suppress("DEPRECATION") com.llamalad7.mixinextras.injector.WrapWithCondition::class,
             WrapWithCondition::class,
             WrapMethod::class,
             WrapOperation::class,

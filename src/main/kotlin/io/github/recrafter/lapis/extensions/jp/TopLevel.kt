@@ -22,9 +22,25 @@ typealias JPFileBuilder = com.palantir.javapoet.JavaFile.Builder
 
 typealias JPTypeName = com.palantir.javapoet.TypeName
 typealias JPClassName = com.palantir.javapoet.ClassName
+typealias JPParameterizedTypeName = com.palantir.javapoet.ParameterizedTypeName
 
 typealias JPCodeBlock = com.palantir.javapoet.CodeBlock
 typealias JPCodeBlockBuilder = com.palantir.javapoet.CodeBlock.Builder
+
+val JPObject: JPTypeName = JPClassName.OBJECT
+val JPVoid: JPTypeName = JPClassName.VOID
+val JPBoolean: JPTypeName = JPTypeName.BOOLEAN
+val JPByte: JPTypeName = JPTypeName.BYTE
+val JPShort: JPTypeName = JPTypeName.SHORT
+val JPInt: JPTypeName = JPTypeName.INT
+val JPLong: JPTypeName = JPTypeName.LONG
+val JPChar: JPTypeName = JPTypeName.CHAR
+val JPFloat: JPTypeName = JPTypeName.FLOAT
+val JPDouble: JPTypeName = JPTypeName.DOUBLE
+val JPString: JPTypeName = JPClassName.get("java.lang", "String")
+val JPList: JPTypeName = JPClassName.get("java.util", "List")
+val JPSet: JPTypeName = JPClassName.get("java.util", "Set")
+val JPMap: JPTypeName = JPClassName.get("java.util", "Map")
 
 fun buildJavaField(type: JPTypeName, name: String, builder: JPFieldBuilder.() -> Unit = {}): JPField =
     JPField.builder(type, name).apply(builder).build()
@@ -38,8 +54,11 @@ fun buildJavaInterface(name: String, builder: JPTypeBuilder.() -> Unit = {}): JP
 fun buildJavaMethod(name: String, builder: JPMethodBuilder.() -> Unit = {}): JPMethod =
     JPMethod.methodBuilder(name).apply(builder).build()
 
+fun buildJavaParameter(type: JPTypeName, name: String, builder: JPParameterBuilder.() -> Unit = {}): JPParameter =
+    JPParameter.builder(type, name).apply(builder).build()
+
 fun buildJavaParameter(type: KJTypeName, name: String, builder: JPParameterBuilder.() -> Unit = {}): JPParameter =
-    JPParameter.builder(type.javaVersion, name).apply(builder).build()
+    buildJavaParameter(type.javaVersion, name, builder)
 
 inline fun <reified A : Annotation> buildJavaAnnotation(builder: JPAnnotationBuilder.() -> Unit = {}): JPAnnotation =
     JPAnnotation.builder(JPClassName.get(A::class.java)).apply(builder).build()

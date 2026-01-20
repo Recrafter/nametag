@@ -17,10 +17,6 @@ class KJParameterList(val parameters: List<KJParameter>) {
     }
 
     val javaVersion: List<JPParameter> by unsafeLazy {
-        parameters.map {
-            buildJavaParameter(it.type, it.name) {
-
-            }
-        }
+        parameters.map { buildJavaParameter(it.type, it.name) }
     }
 }

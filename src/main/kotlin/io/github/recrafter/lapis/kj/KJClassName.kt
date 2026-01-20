@@ -32,6 +32,9 @@ class KJClassName(val packageName: String, vararg val names: String) {
         KJTypeName(kotlinVersion)
     }
 
+    fun parameterizedBy(vararg genericTypes: KJTypeName): KJParameterizedTypeName =
+        KJParameterizedTypeName(this, *genericTypes)
+
     override fun equals(other: Any?): Boolean {
         if (this === other) {
             return true

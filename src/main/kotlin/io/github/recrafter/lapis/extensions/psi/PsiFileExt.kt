@@ -17,3 +17,18 @@ fun PsiFile.findPsiClass(action: (PsiClass) -> Boolean): PsiClass? {
     })
     return found
 }
+
+fun PsiFile.findPsiFunction(action: (PsiFunction) -> Boolean): PsiFunction? {
+    var found: PsiFunction? = null
+    accept(object : PsiRecursiveElementWalkingVisitor() {
+        override fun visitElement(psiElement: PsiElement) {
+            if (psiElement is PsiFunction && action(psiElement)) {
+                found = psiElement
+                stopWalking()
+                return
+            }
+            super.visitElement(psiElement)
+        }
+    })
+    return found
+}

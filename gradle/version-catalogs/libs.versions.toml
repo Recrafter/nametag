@@ -5,7 +5,7 @@ kotlin = "2.0.21"
 ksp = "2.0.21-1.0.25"
 
 mixin = "0.8.7"
-mixin-extras = "0.5.2"
+mixin-extras = "0.5.3"
 
 java-poet = "0.9.0"
 kotlin-poet-ksp = "2.2.0"

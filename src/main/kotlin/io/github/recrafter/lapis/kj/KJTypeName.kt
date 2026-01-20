@@ -6,7 +6,7 @@ import io.github.recrafter.lapis.extensions.kp.KPClassName
 import io.github.recrafter.lapis.extensions.kp.KPTypeName
 import io.github.recrafter.lapis.extensions.kp.toJavaType
 
-class KJTypeName(val kotlinVersion: KPTypeName) {
+class KJTypeName(val kotlinVersion: KPTypeName, val shouldBox: Boolean = false) {
 
     val className: KJClassName? by lazy {
         when (kotlinVersion) {
@@ -24,9 +24,19 @@ class KJTypeName(val kotlinVersion: KPTypeName) {
 
     val javaVersion: JPTypeName by unsafeLazy {
         when (kotlinVersion) {
-            is KPClassName -> kotlinVersion.toJavaType()
+            is KPClassName -> kotlinVersion.toJavaType(shouldBox)
             else -> error("Unsupported type: $kotlinVersion")
         }
+    }
+
+    val boxed: KJTypeName by unsafeLazy {
+        if (shouldBox) this
+        else KJTypeName(kotlinVersion, true)
+    }
+
+    val unboxed: KJTypeName by unsafeLazy {
+        if (shouldBox) KJTypeName(kotlinVersion, false)
+        else this
     }
 
     override fun equals(other: Any?): Boolean {

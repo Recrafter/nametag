@@ -26,8 +26,24 @@ typealias KPFileBuilder = com.squareup.kotlinpoet.FileSpec.Builder
 
 typealias KPTypeName = com.squareup.kotlinpoet.TypeName
 typealias KPClassName = com.squareup.kotlinpoet.ClassName
+typealias KPParameterizedTypeName = com.squareup.kotlinpoet.ParameterizedTypeName
 
 typealias KPCodeBlock = com.squareup.kotlinpoet.CodeBlock
+
+val KPAny: KPTypeName = com.squareup.kotlinpoet.ANY
+val KPUnit: KPTypeName = com.squareup.kotlinpoet.UNIT
+val KPBoolean: KPTypeName = com.squareup.kotlinpoet.BOOLEAN
+val KPByte: KPTypeName = com.squareup.kotlinpoet.BYTE
+val KPShort: KPTypeName = com.squareup.kotlinpoet.SHORT
+val KPInt: KPTypeName = com.squareup.kotlinpoet.INT
+val KPLong: KPTypeName = com.squareup.kotlinpoet.LONG
+val KPChar: KPTypeName = com.squareup.kotlinpoet.CHAR
+val KPFloat: KPTypeName = com.squareup.kotlinpoet.FLOAT
+val KPDouble: KPTypeName = com.squareup.kotlinpoet.DOUBLE
+val KPString: KPTypeName = com.squareup.kotlinpoet.STRING
+val KPList: KPTypeName = com.squareup.kotlinpoet.LIST
+val KPSet: KPTypeName = com.squareup.kotlinpoet.SET
+val KPMap: KPTypeName = com.squareup.kotlinpoet.MAP
 
 fun buildKotlinConstructor(builder: KPFunctionBuilder.() -> Unit = {}): KPFunction =
     KPFunction.constructorBuilder().apply(builder).build()
